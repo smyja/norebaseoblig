@@ -2,6 +2,7 @@ import os
 from enum import Enum
 
 from pydantic_settings import BaseSettings
+from pydantic import SecretStr
 from starlette.config import Config
 
 current_file_dir = os.path.dirname(os.path.realpath(__file__))
@@ -19,7 +20,7 @@ class AppSettings(BaseSettings):
 
 
 class CryptSettings(BaseSettings):
-    SECRET_KEY: str = config("SECRET_KEY")
+    SECRET_KEY: SecretStr = config("SECRET_KEY", cast=SecretStr)
     ALGORITHM: str = config("ALGORITHM", default="HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = config("ACCESS_TOKEN_EXPIRE_MINUTES", default=30)
     REFRESH_TOKEN_EXPIRE_DAYS: int = config("REFRESH_TOKEN_EXPIRE_DAYS", default=7)
