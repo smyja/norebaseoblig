@@ -104,6 +104,9 @@ def lifespan_factory(
             if isinstance(settings, RedisRateLimiterSettings):
                 await create_redis_rate_limit_pool()
 
+            if create_tables_on_start:
+                await create_tables()
+
             initialization_complete.set()
 
             yield
