@@ -1921,5 +1921,10 @@ This project was inspired by a few projects, it's based on them with things chan
 
 ## 11. Contact
 
-Igor Magalhaes – [@igormagalhaesr](https://twitter.com/igormagalhaesr) – igormagalhaesr@gmail.com
-[github.com/igorbenav](https://github.com/igorbenav/)
+Benav Labs – [benav.io](https://benav.io)
+[github.com/benavlabs](https://github.com/benavlabs/)
+
+<hr>
+<a href="https://benav.io">
+  <img src="https://github.com/benavlabs/fastcrud/raw/main/docs/assets/benav_labs_banner.png" alt="Powered by Benav Labs - benav.io"/>
+</a>
