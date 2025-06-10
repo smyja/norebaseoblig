@@ -8,6 +8,11 @@
   <i>A production-ready FastAPI boilerplate to speed up your development.</i>
 </p>
 
+!!! warning "Documentation Status"
+    This is our first version of the documentation. While functional, we acknowledge it's rough around the edges - there's a huge amount to document and we needed to start somewhere! We built this foundation (with a lot of AI assistance) so we can improve upon it. 
+    
+    Better documentation, examples, and guides are actively being developed. Contributions and feedback are greatly appreciated!
+
 <p align="center">
   <a href="https://fastapi.tiangolo.com">
       <img src="https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi" alt="FastAPI">
