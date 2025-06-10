@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/igormagalhaesr/FastAPI-boilerplate">
+  <a href="https://benavlabs.github.io/FastAPI-boilerplate">
     <img src="docs/assets/FastAPI-boilerplate.png" alt="Purple Rocket with FastAPI Logo as its window." width="35%" height="auto">
   </a>
 </p>
