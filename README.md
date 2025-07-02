@@ -74,10 +74,11 @@ This README provides a quick reference for LLMs and developers, but the full doc
 - 🏬 Easy redis caching
 - 👜 Easy client-side caching
 - 🚦 ARQ integration for task queue
-- ⚙️ Efficient and robust queries with <a href="https://github.com/igorbenav/fastcrud">fastcrud</a>
-- ⎘ Out of the box offset and cursor pagination support with <a href="https://github.com/igorbenav/fastcrud">fastcrud</a>
+- ⚙️ Efficient and robust queries with <a href="https://github.com/benavlabs/fastcrud">fastcrud</a>
+- ⎘ Out of the box offset and cursor pagination support with <a href="https://github.com/benavlabs/fastcrud">fastcrud</a>
 - 🛑 Rate Limiter dependency
 - 👮 FastAPI docs behind authentication and hidden based on the environment
+- 🔧 Modern and light admin interface powered by [CRUDAdmin](https://github.com/benavlabs/crudadmin)
 - 🚚 Easy running with docker compose
 - ⚖️ NGINX Reverse Proxy and Load Balancing
 
@@ -114,9 +115,10 @@ This README provides a quick reference for LLMs and developers, but the full doc
    1. [ARQ Job Queues](#510-arq-job-queues)
    1. [Rate Limiting](#511-rate-limiting)
    1. [JWT Authentication](#512-jwt-authentication)
-   1. [Running](#513-running)
-   1. [Create Application](#514-create-application)
-   2. [Opting Out of Services](#515-opting-out-of-services)
+   1. [Admin Panel](#513-admin-panel)
+   1. [Running](#514-running)
+   1. [Create Application](#515-create-application)
+   2. [Opting Out of Services](#516-opting-out-of-services)
 1. [Running in Production](#6-running-in-production)
    1. [Uvicorn Workers with Gunicorn](#61-uvicorn-workers-with-gunicorn)
    1. [Running With NGINX](#62-running-with-nginx)
@@ -238,6 +240,37 @@ ADMIN_EMAIL="your_email"
 ADMIN_USERNAME="your_username"
 ADMIN_PASSWORD="your_password"
 ```
+
+For the CRUDAdmin panel:
+
+```
+# ------------- crud admin -------------
+CRUD_ADMIN_ENABLED=true                    # default=true, set to false to disable admin panel
+CRUD_ADMIN_MOUNT_PATH="/admin"             # default="/admin", path where admin panel will be mounted
+
+# ------------- crud admin security -------------
+CRUD_ADMIN_MAX_SESSIONS=10                 # default=10, maximum concurrent sessions per user
+CRUD_ADMIN_SESSION_TIMEOUT=1440            # default=1440 (24 hours), session timeout in minutes
+SESSION_SECURE_COOKIES=true                # default=true, use secure cookies
+
+# ------------- crud admin tracking -------------
+CRUD_ADMIN_TRACK_EVENTS=true               # default=true, track admin events
+CRUD_ADMIN_TRACK_SESSIONS=true             # default=true, track admin sessions in database
+
+# ------------- crud admin redis (optional for production) -------------
+CRUD_ADMIN_REDIS_ENABLED=false             # default=false, use Redis for session storage
+CRUD_ADMIN_REDIS_HOST="localhost"          # default="localhost", Redis host for admin sessions
+CRUD_ADMIN_REDIS_PORT=6379                 # default=6379, Redis port for admin sessions
+CRUD_ADMIN_REDIS_DB=0                      # default=0, Redis database for admin sessions
+CRUD_ADMIN_REDIS_PASSWORD=""               # optional, Redis password for admin sessions
+CRUD_ADMIN_REDIS_SSL=false                 # default=false, use SSL for Redis connection
+```
+
+**Session Backend Options:**
+- **Memory** (default): Development-friendly, sessions reset on restart
+- **Redis** (production): High performance, scalable, persistent sessions  
+- **Database**: Audit-friendly with admin visibility
+- **Hybrid**: Redis performance + database audit trail
 
 For redis caching:
 
@@ -1546,7 +1579,116 @@ What you should do with the client is:
 
 This authentication setup in the provides a robust, secure, and user-friendly way to handle user sessions in your API applications.
 
-### 5.13 Running
+### 5.13 Admin Panel
+
+> 📖 **[See admin panel guide in our docs](https://benavlabs.github.io/FastAPI-boilerplate/user-guide/admin-panel/)**
+
+The boilerplate includes a powerful web-based admin interface built with [CRUDAdmin](https://github.com/benavlabs/crudadmin) that provides a comprehensive database management system.
+
+> **About CRUDAdmin**: CRUDAdmin is a modern admin interface generator for FastAPI applications. Learn more at:
+> - **📚 Documentation**: [benavlabs.github.io/crudadmin](https://benavlabs.github.io/crudadmin/)
+> - **💻 GitHub**: [github.com/benavlabs/crudadmin](https://github.com/benavlabs/crudadmin)
+
+#### 5.13.1 Features
+
+The admin panel includes:
+
+- **User Management**: Create, view, update users with password hashing
+- **Tier Management**: Manage user tiers and permissions
+- **Post Management**: Full CRUD operations for posts
+- **Authentication**: Secure login system with session management
+- **Security**: IP restrictions, session timeouts, and secure cookies
+- **Redis Integration**: Optional Redis support for session storage
+- **Event Tracking**: Track admin actions and sessions
+
+#### 5.13.2 Access
+
+Once your application is running, you can access the admin panel at:
+
+```
+http://localhost:8000/admin
+```
+
+Use the admin credentials you defined in your `.env` file:
+- Username: `ADMIN_USERNAME`
+- Password: `ADMIN_PASSWORD`
+
+#### 5.13.3 Configuration
+
+The admin panel is highly configurable through environment variables:
+
+- **Basic Settings**: Enable/disable, mount path
+- **Security**: Session limits, timeouts, IP restrictions
+- **Tracking**: Event and session tracking
+- **Redis**: Optional Redis session storage
+
+See the [environment variables section](#31-environment-variables-env) for complete configuration options.
+
+#### 5.13.4 Customization
+
+**Adding New Models**
+
+To add new models to the admin panel, edit `src/app/admin/views.py`:
+
+```python
+from your_app.models import YourModel
+from your_app.schemas import YourCreateSchema, YourUpdateSchema
+
+def register_admin_views(admin: CRUDAdmin) -> None:
+    # ... existing models ...
+    
+    admin.add_view(
+        model=YourModel,
+        create_schema=YourCreateSchema,
+        update_schema=YourUpdateSchema,
+        allowed_actions={"view", "create", "update", "delete"}
+    )
+```
+
+**Advanced Configuration**
+
+For more complex model configurations:
+
+```python
+# Handle models with problematic fields (e.g., TSVector)
+admin.add_view(
+    model=Article,
+    create_schema=ArticleCreate,
+    update_schema=ArticleUpdate,
+    select_schema=ArticleSelect,  # Exclude problematic fields from read operations
+    allowed_actions={"view", "create", "update", "delete"}
+)
+
+# Password field handling
+admin.add_view(
+    model=User,
+    create_schema=UserCreateWithPassword,
+    update_schema=UserUpdateWithPassword,
+    password_transformer=password_transformer,  # Handles password hashing
+    allowed_actions={"view", "create", "update"}
+)
+
+# Read-only models
+admin.add_view(
+    model=AuditLog,
+    create_schema=AuditLogSchema,
+    update_schema=AuditLogSchema,
+    allowed_actions={"view"}  # Only viewing allowed
+)
+```
+
+**Session Backend Configuration**
+
+For production environments, consider using Redis for better performance:
+
+```python
+# Enable Redis sessions in your environment
+CRUD_ADMIN_REDIS_ENABLED=true
+CRUD_ADMIN_REDIS_HOST=localhost
+CRUD_ADMIN_REDIS_PORT=6379
+```
+
+### 5.14 Running
 
 If you are using docker compose, just running the following command should ensure everything is working:
 
@@ -1566,7 +1708,7 @@ And for the worker:
 ```sh
 uv run arq src.app.core.worker.settings.WorkerSettings
 ```
-### 5.14 Create Application
+### 5.15 Create Application
 
 If you want to stop tables from being created every time you run the api, you should disable this here:
 
@@ -1589,7 +1731,7 @@ A few examples:
 - Add client-side cache middleware
 - Add Startup and Shutdown event handlers for cache, queue and rate limit
 
-### 5.15 Opting Out of Services
+### 5.16 Opting Out of Services
 
 To opt out of services (like `Redis`, `Queue`, `Rate Limiter`), head to the `Settings` class in `src/app/core/config`:
 
@@ -1617,6 +1759,7 @@ class Settings(
     RedisQueueSettings,
     RedisRateLimiterSettings,
     DefaultRateLimitSettings,
+    CRUDAdminSettings,
     EnvironmentSettings,
 ):
     pass

@@ -77,6 +77,11 @@ nav:
       - JWT Tokens: user-guide/authentication/jwt-tokens.md
       - User Management: user-guide/authentication/user-management.md
       - Permissions: user-guide/authentication/permissions.md
+    - Admin Panel:
+      - user-guide/admin-panel/index.md
+      - Configuration: user-guide/admin-panel/configuration.md
+      - Adding Models: user-guide/admin-panel/adding-models.md
+      - User Management: user-guide/admin-panel/user-management.md
     - Caching:
       - Overview: user-guide/caching/index.md
       - Redis Cache: user-guide/caching/redis-cache.md
