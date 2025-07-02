@@ -140,6 +140,7 @@ def create_application(
         | EnvironmentSettings
     ),
     create_tables_on_start: bool = True,
+    lifespan: Callable[[FastAPI], _AsyncGeneratorContextManager[Any]] | None = None,
     **kwargs: Any,
 ) -> FastAPI:
     """Creates and configures a FastAPI application based on the provided settings.
@@ -195,7 +196,9 @@ def create_application(
     if isinstance(settings, EnvironmentSettings):
         kwargs.update({"docs_url": None, "redoc_url": None, "openapi_url": None})
 
-    lifespan = lifespan_factory(settings, create_tables_on_start=create_tables_on_start)
+    # Use custom lifespan if provided, otherwise use default factory
+    if lifespan is None:
+        lifespan = lifespan_factory(settings, create_tables_on_start=create_tables_on_start)
 
     application = FastAPI(lifespan=lifespan, **kwargs)
     application.include_router(router)

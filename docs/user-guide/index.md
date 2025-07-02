@@ -32,6 +32,14 @@ This guide covers all aspects of working with the FastAPI Boilerplate:
 - **[User Management](authentication/user-management.md)** - Handle user registration, login, and profiles
 - **[Permissions](authentication/permissions.md)** - Implement role-based access control
 
+### Admin Panel
+Powered by [CRUDAdmin](https://github.com/benavlabs/crudadmin) - a modern admin interface generator for FastAPI.
+
+- **[Admin Panel Overview](admin-panel/index.md)** - Web-based database management interface
+- **[Configuration](admin-panel/configuration.md)** - Setup, session backends, and environment variables
+- **[Adding Models](admin-panel/adding-models.md)** - Register models, schemas, and customization
+- **[User Management](admin-panel/user-management.md)** - Admin users, authentication, and security
+
 ### Performance & Caching
 - **[Caching Overview](caching/index.md)** - Improve performance with Redis caching
 - **[Redis Cache](caching/redis-cache.md)** - Server-side caching with Redis
