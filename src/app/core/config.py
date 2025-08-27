@@ -129,6 +129,7 @@ class EnvironmentSettings(BaseSettings):
 
 class Settings(
     AppSettings,
+    SQLiteSettings,
     PostgresSettings,
     CryptSettings,
     FirstUserSettings,
