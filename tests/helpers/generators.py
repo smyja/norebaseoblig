@@ -1,4 +1,3 @@
-import uuid as uuid_pkg
 from uuid6 import uuid7
 
 from sqlalchemy.orm import Session
