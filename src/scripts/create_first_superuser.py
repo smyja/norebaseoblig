@@ -37,7 +37,7 @@ async def create_first_user(session: AsyncSession) -> None:
                 Column("email", String(50), nullable=False, unique=True, index=True),
                 Column("hashed_password", String, nullable=False),
                 Column("profile_image_url", String, default="https://profileimageurl.com"),
-                Column("uuid", UUID(as_uuid=True), primary_key=True, default=uuid7(), unique=True),
+                Column("uuid", UUID(as_uuid=True), primary_key=True, default=uuid7, unique=True),
                 Column("created_at", DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False),
                 Column("updated_at", DateTime),
                 Column("deleted_at", DateTime),

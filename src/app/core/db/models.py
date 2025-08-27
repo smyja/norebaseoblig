@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 class UUIDMixin:
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid7(), server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, default=uuid7, server_default=text("gen_random_uuid()")
     )
 
 
