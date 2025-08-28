@@ -17,7 +17,7 @@ DATABASE_URL = f"{DATABASE_PREFIX}{DATABASE_URI}"
 
 SQLITE_DB_URL='sqlite+aiosqlite:///./testing.db'
 
-async_engine = create_async_engine(SQLITE_DB_URL, echo=False, future=True)
+async_engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 
 local_session = async_sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)
 
