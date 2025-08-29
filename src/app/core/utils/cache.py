@@ -171,14 +171,13 @@ async def _delete_keys_by_pattern(pattern: str) -> None:
     - Be cautious with patterns that could match a large number of keys, as deleting
       many keys simultaneously may impact the performance of the Redis server.
     """
-    if client is None:
-        raise MissingClientError
-
-    cursor = -1
-    while cursor != 0:
+    cursor = 0  # Make sure cursor starts at 0
+    while True:
         cursor, keys = await client.scan(cursor, match=pattern, count=100)
         if keys:
             await client.delete(*keys)
+        if cursor == 0:  # cursor returns to 0 when scan is complete
+            break
 
 
 def cache(
