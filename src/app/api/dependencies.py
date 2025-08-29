@@ -34,7 +34,7 @@ async def get_current_user(
         user = await crud_users.get(db=db, username=token_data.username_or_email, is_deleted=False)
 
     if user:
-        return cast(dict[str, Any], user)
+        return user
 
     raise UnauthorizedException("User not authenticated.")
 
