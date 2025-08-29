@@ -85,15 +85,15 @@ async def patch_user(
         raise NotFoundException("User not found")
 
     db_user = cast(UserRead, db_user)
-    if db_user["username"] != current_user["username"]:
+    if db_user.username != current_user["username"]:
         raise ForbiddenException()
 
-    if values.username != db_user["username"]:
+    if values.username != db_user.username:
         existing_username = await crud_users.exists(db=db, username=values.username)
         if existing_username:
             raise DuplicateValueException("Username not available")
 
-    if values.email != db_user["email"]:
+    if values.email != db_user.email:
         existing_email = await crud_users.exists(db=db, email=values.email)
         if existing_email:
             raise DuplicateValueException("Email is already registered")
