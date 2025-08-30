@@ -117,11 +117,14 @@ class TestPatchUser:
     async def test_patch_user_success(self, mock_db, current_user_dict, sample_user_read):
         """Test successful user update."""
         username = current_user_dict["username"]
-        sample_user_read.username = username  # Make sure usernames match
         user_update = UserUpdate(name="New Name")
+        
+        # Convert the UserRead model to a dictionary for the mock
+        user_dict = sample_user_read.model_dump()
+        user_dict["username"] = username
 
         with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
+            mock_crud.get = AsyncMock(return_value=user_dict)  # Return dict instead of UserRead
             mock_crud.exists = AsyncMock(return_value=False)  # No conflicts
             mock_crud.update = AsyncMock(return_value=None)
 
@@ -134,11 +137,13 @@ class TestPatchUser:
     async def test_patch_user_forbidden(self, mock_db, current_user_dict, sample_user_read):
         """Test user update when user tries to update another user."""
         username = "different_user"
-        sample_user_read.username = username
         user_update = UserUpdate(name="New Name")
+        # Convert the UserRead model to a dictionary for the mock
+        user_dict = sample_user_read.model_dump()
+        user_dict["username"] = username
 
         with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
+            mock_crud.get = AsyncMock(return_value=user_dict)  # Return dict instead of UserRead
 
             with pytest.raises(ForbiddenException):
                 await patch_user(Mock(), user_update, username, current_user_dict, mock_db)
