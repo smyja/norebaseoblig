@@ -24,8 +24,9 @@ async def write_post(
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],
 ) -> PostRead:
-    db_user = await crud_users.get(db=db, username=username, is_deleted=False, schema_to_select=UserRead,
-                                   return_as_model=True)
+    db_user = await crud_users.get(
+        db=db, username=username, is_deleted=False, schema_to_select=UserRead, return_as_model=True
+    )
     if db_user is None:
         raise NotFoundException("User not found")
 
