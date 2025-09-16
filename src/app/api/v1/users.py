@@ -72,7 +72,6 @@ async def read_user(request: Request, username: str, db: Annotated[AsyncSession,
     return cast(UserRead, db_user)
 
 
-# In src/app/api/v1/users.py, replace the patch_user function with this:
 
 @router.patch("/user/{username}")
 async def patch_user(
@@ -86,7 +85,6 @@ async def patch_user(
     if db_user is None:
         raise NotFoundException("User not found")
 
-    # Handle both dict and UserRead object types
     if isinstance(db_user, dict):
         db_username = db_user["username"]
         db_email = db_user["email"]
@@ -97,17 +95,14 @@ async def patch_user(
     if db_username != current_user["username"]:
         raise ForbiddenException()
 
-    # Check for email conflicts if email is being updated
     if values.email is not None and values.email != db_email:
         if await crud_users.exists(db=db, email=values.email):
             raise DuplicateValueException("Email is already registered")
-
-    # Check for username conflicts if username is being updated  
+ 
     if values.username is not None and values.username != db_username:
         if await crud_users.exists(db=db, username=values.username):
             raise DuplicateValueException("Username not available")
 
-    # Update the user
     await crud_users.update(db=db, object=values, username=username)
     return {"message": "User updated"}
 

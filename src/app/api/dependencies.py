@@ -34,10 +34,9 @@ async def get_current_user(
         user = await crud_users.get(db=db, username=token_data.username_or_email, is_deleted=False)
 
     if user:
-        # Ensure consistent return type - always return dict
-        if hasattr(user, 'model_dump'):  # It's a Pydantic model
+        if hasattr(user, 'model_dump'):
             return user.model_dump()
-        else:  # It's already a dict
+        else:
             return user
 
     raise UnauthorizedException("User not authenticated.")

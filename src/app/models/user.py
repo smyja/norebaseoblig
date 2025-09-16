@@ -12,7 +12,6 @@ from ..core.db.database import Base
 class User(Base):
     __tablename__ = "user"
 
-    # Option 1: Use integer ID as primary key (recommended for compatibility)
     id: Mapped[int] = mapped_column(autoincrement=True, primary_key=True, init=False)
     
     name: Mapped[str] = mapped_column(String(30))
