@@ -10,7 +10,7 @@ from ..models.tier import Tier
 from ..models.user import User
 from ..schemas.post import PostUpdate
 from ..schemas.tier import TierCreate, TierUpdate
-from ..schemas.user import UserCreate, UserUpdate
+from ..schemas.user import UserCreate, UserCreateInternal, UserUpdate
 
 
 class PostCreateAdmin(BaseModel):
@@ -41,8 +41,9 @@ def register_admin_views(admin: CRUDAdmin) -> None:
         model=User,
         create_schema=UserCreate,
         update_schema=UserUpdate,
-        allowed_actions={"view", "create", "update"},
+        update_internal_schema=UserCreateInternal,
         password_transformer=password_transformer,
+        allowed_actions={"view", "create", "update"},
     )
 
     admin.add_view(
