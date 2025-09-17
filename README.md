@@ -31,6 +31,9 @@
   <a href="https://nginx.org/en/">
       <img src="https://img.shields.io/badge/NGINX-009639?logo=nginx&logoColor=fff&style=for-the-badge" alt=NGINX>
   </a>
+  <a href="https://deepwiki.com/benavlabs/FastAPI-boilerplate">
+      <img src="https://img.shields.io/badge/DeepWiki-1F2937?style=for-the-badge&logoColor=white" alt="DeepWiki">
+  </a>
 </p>
 
 ---
@@ -38,6 +41,8 @@
 ## 📖 Documentation
 
 📚 **[Visit our comprehensive documentation at benavlabs.github.io/FastAPI-boilerplate](https://benavlabs.github.io/FastAPI-boilerplate/)**
+
+🧠 **DeepWiki Docs: [deepwiki.com/benavlabs/FastAPI-boilerplate](https://deepwiki.com/benavlabs/FastAPI-boilerplate)**
 
 > **⚠️ Documentation Status**
 > 
