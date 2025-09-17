@@ -72,6 +72,7 @@ async def read_user(request: Request, username: str, db: Annotated[AsyncSession,
     return cast(UserRead, db_user)
 
 
+
 @router.patch("/user/{username}")
 async def patch_user(
     request: Request,
@@ -80,23 +81,27 @@ async def patch_user(
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],
 ) -> dict[str, str]:
-    db_user = await crud_users.get(db=db, username=username, schema_to_select=UserRead)
+    db_user = await crud_users.get(db=db, username=username)
     if db_user is None:
         raise NotFoundException("User not found")
 
-    db_user = cast(UserRead, db_user)
-    if db_user.username != current_user["username"]:
+    if isinstance(db_user, dict):
+        db_username = db_user["username"]
+        db_email = db_user["email"]
+    else:
+        db_username = db_user.username
+        db_email = db_user.email
+
+    if db_username != current_user["username"]:
         raise ForbiddenException()
 
-    if values.username != db_user.username:
-        existing_username = await crud_users.exists(db=db, username=values.username)
-        if existing_username:
-            raise DuplicateValueException("Username not available")
-
-    if values.email != db_user.email:
-        existing_email = await crud_users.exists(db=db, email=values.email)
-        if existing_email:
+    if values.email is not None and values.email != db_email:
+        if await crud_users.exists(db=db, email=values.email):
             raise DuplicateValueException("Email is already registered")
+ 
+    if values.username is not None and values.username != db_username:
+        if await crud_users.exists(db=db, username=values.username):
+            raise DuplicateValueException("Username not available")
 
     await crud_users.update(db=db, object=values, username=username)
     return {"message": "User updated"}

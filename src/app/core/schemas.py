@@ -1,4 +1,5 @@
 import uuid as uuid_pkg
+from uuid6 import uuid7
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,7 +14,7 @@ class HealthCheck(BaseModel):
 
 # -------------- mixins --------------
 class UUIDSchema(BaseModel):
-    uuid: uuid_pkg.UUID = Field(default_factory=uuid_pkg.uuid4)
+    uuid: uuid_pkg.UUID = Field(default_factory=uuid7)
 
 
 class TimestampSchema(BaseModel):
