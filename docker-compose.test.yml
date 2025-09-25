@@ -1,8 +1,190 @@
 services:
   web:
-    user: root  # Run as root for tests to allow global package installation
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    ports:
+      - "8000:8000"
     environment:
-      - PYTHONPATH=/usr/local/lib/python3.11/site-packages
-    command: bash -c "pip install faker pytest-asyncio pytest-mock && pytest tests/ -v"
+      - ENVIRONMENT=testing
+      - SECRET_KEY=test-secret-key-for-testing-only
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_SERVER=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=web_test
+      - POSTGRES_URL=postgresql://postgres:postgres@db:5432/web_test
+      - REDIS_CACHE_HOST=redis
+      - REDIS_CACHE_PORT=6379
+      - REDIS_CACHE_URL=redis://redis:6379/0
+      - REDIS_QUEUE_HOST=redis
+      - REDIS_QUEUE_PORT=6379
+      - REDIS_QUEUE_URL=redis://redis:6379/1
+      - REDIS_RATE_LIMIT_HOST=redis
+      - REDIS_RATE_LIMIT_PORT=6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379/2
+      - PYTHONPATH=/app/src
+      - CORS_ORIGINS=["http://localhost:3000","http://localhost:3001"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
-      - ./tests:/code/tests
+      - ./src:/app/src
+      - ./tests:/app/tests
+    command: >
+      sh -c "cd src && alembic upgrade head && cd .. &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=web_test
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d web_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Test runner service
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    # Run as root so testcontainers can access the Docker socket
+    user: "root"
+    environment:
+      - ENVIRONMENT=testing
+      - SECRET_KEY=test-secret-key-for-testing-only
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_SERVER=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=web_test
+      - POSTGRES_URL=postgresql://postgres:postgres@db:5432/web_test
+      - REDIS_CACHE_HOST=redis
+      - REDIS_CACHE_PORT=6379
+      - REDIS_CACHE_URL=redis://redis:6379/0
+      - REDIS_QUEUE_HOST=redis
+      - REDIS_QUEUE_PORT=6379
+      - REDIS_QUEUE_URL=redis://redis:6379/1
+      - REDIS_RATE_LIMIT_HOST=redis
+      - REDIS_RATE_LIMIT_PORT=6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379/2
+      - PYTHONPATH=/app/src
+      # Ensure Docker client points to the mounted socket
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./coverage:/app/coverage
+      # Allow Testcontainers inside the test container to control Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -c "/opt/venv/bin/python -m pytest tests/ --cov=src/app --cov-report=xml:/app/coverage/coverage.xml --cov-report=html:/app/coverage/htmlcov --cov-report=term-missing --cov-fail-under=70 --junitxml=/app/coverage/pytest-results.xml -v"
+    profiles:
+      - test
+
+  # Load testing service
+  load-test:
+    image: locustio/locust:2.17.0
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./tests/load:/mnt/locust
+    command: -f /mnt/locust/locustfile.py --host=http://web:8000
+    depends_on:
+      web:
+        condition: service_healthy
+    profiles:
+      - load-test
+
+  # Database migration service
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      - ENVIRONMENT=testing
+      - SECRET_KEY=test-secret-key-for-testing-only
+      - POSTGRES_URL=postgresql://postgres:postgres@db:5432/web_test
+      - PYTHONPATH=/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    command: /opt/venv/bin/alembic upgrade head
+    profiles:
+      - migrate
+
+  # Code quality checks
+  quality:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./pyproject.toml:/app/pyproject.toml
+    command: >
+      sh -c "/opt/venv/bin/ruff check src --output-format=github &&
+             /opt/venv/bin/ruff format src --check &&
+             /opt/venv/bin/mypy src --config-file pyproject.toml"
+    environment:
+      - ENVIRONMENT=testing
+      - SECRET_KEY=test-secret-key-for-testing-only
+      - PYTHONPATH=/app/src
+    profiles:
+      - quality
+
+volumes:
+  postgres_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+
+networks:
+  default:
+    name: norebase-test-network
+    driver: bridge

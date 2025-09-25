@@ -4,54 +4,94 @@ services:
       context: .
       dockerfile: Dockerfile
     # -------- replace with comment to run with gunicorn --------
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    # command: gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+    command: uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload
+    # command: gunicorn src.app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
     env_file:
-      - ./src/.env
+      - ./src/.env.local
     # -------- replace with comment if you are using nginx --------
     ports:
       - "8000:8000"
     # expose:
     #   - "8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
-      - ./src/app:/code/app
+      - ./src:/code/src
       - ./src/.env:/code/.env
+      - ./tests:/code/tests
+      - ./pyproject.toml:/code/pyproject.toml
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    env_file:
+      - ./src/.env.local
+    environment:
+      - PYTHONPATH=/code/src
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/code/src
+      - ./tests:/code/tests
+      - ./pyproject.toml:/code/pyproject.toml
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: pytest tests/ -v
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile
-    command: arq app.core.worker.settings.WorkerSettings
+    command: arq src.app.core.worker.settings.WorkerSettings
     env_file:
-      - ./src/.env
+      - ./src/.env.local
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
-      - ./src/app:/code/app
+      - ./src:/code/src
       - ./src/.env:/code/.env
 
   db:
-    image: postgres:13
+    image: postgres:13-alpine
     env_file:
-      - ./src/.env
+      - ./src/.env.local
     volumes:
       - postgres-data:/var/lib/postgresql/data
     # -------- replace with comment to run migrations with docker --------
     expose:
       - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     # ports:
     #  - 5432:5432
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     volumes:
       - redis-data:/data
     expose:
       - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   #-------- uncomment to run with pgadmin --------
   # pgadmin:

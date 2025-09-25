@@ -133,3 +133,5 @@ cython_debug/
 .ruff_cache
 
 .idea
+regulations_corpus
+.env.local
