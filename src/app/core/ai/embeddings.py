@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import List, Optional
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from together import Together
 from llama_index.embeddings.together import TogetherEmbedding
@@ -34,6 +36,10 @@ class BatchedTogetherEmbedding(TogetherEmbedding):
         self._start_ts: float = time.time()
         self._name: str = os.getenv("TOGETHER_EMBED_NAME", "embed")
         self._log_enabled: bool = os.getenv("TOGETHER_EMBED_PROGRESS", "1").lower() in {"1", "true", "yes"}
+        # client-level timeout isn't supported via per-call arg in Together SDK; omit for now
+        self._timeout: float = float(os.getenv("TOGETHER_EMBED_TIMEOUT", "60"))
+        self._concurrency: int = max(1, int(os.getenv("TOGETHER_EMBED_CONCURRENCY", "1")))
+        self._lock: Lock = Lock()
 
     def set_progress_total(self, total: int, name: Optional[str] = None) -> None:
         self._total = total
@@ -45,15 +51,18 @@ class BatchedTogetherEmbedding(TogetherEmbedding):
     def _log_batch(self, batch_len: int) -> None:
         if not self._log_enabled:
             return
-        self._processed += batch_len
+        with self._lock:
+            self._processed += batch_len
+            processed = self._processed
         elapsed = time.time() - self._start_ts
-        rate = self._processed / elapsed if elapsed > 0 else 0.0
-        if self._total:
-            pct = (self._processed / self._total) * 100.0
-            remaining = max(self._total - self._processed, 0)
+        rate = processed / elapsed if elapsed > 0 else 0.0
+        total = self._total
+        if total:
+            pct = (processed / total) * 100.0
+            remaining = max(total - processed, 0)
             eta = remaining / rate if rate > 0 else 0.0
             print(
-                f"[embeddings:{self._name}] {self._processed}/{self._total} ({pct:.1f}%) | "
+                f"[embeddings:{self._name}] {processed}/{total} ({pct:.1f}%) | "
                 f"rate {rate:.1f}/s | elapsed {elapsed:.1f}s | eta {eta:.1f}s",
                 flush=True,
             )
@@ -80,20 +89,34 @@ class BatchedTogetherEmbedding(TogetherEmbedding):
         return []
 
     def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:  # type: ignore[override]
-        out: List[List[float]] = []
-        for i in range(0, len(texts), self._batch_size):
-            batch = texts[i : i + self._batch_size]
+        n = len(texts)
+        out: List[Optional[List[float]]] = [None] * n
+
+        # Prepare segments
+        segments = [(i, texts[i : i + self._batch_size]) for i in range(0, n, self._batch_size)]
+
+        def run_segment(start: int, segment: List[str]) -> None:
             for attempt in range(self._max_retries):
                 try:
-                    resp = self._client.embeddings.create(model=self.model_name, input=batch)
-                    out_batch = [list(item.embedding) for item in resp.data]
-                    out.extend(out_batch)
-                    self._log_batch(len(out_batch))
-                    break
+                    resp = self._client.embeddings.create(model=self.model_name, input=segment)
+                    embs = [list(item.embedding) for item in resp.data]
+                    for j, emb in enumerate(embs):
+                        out[start + j] = emb
+                    self._log_batch(len(embs))
+                    return
                 except Exception:  # noqa: BLE001
                     if attempt == self._max_retries - 1:
                         raise
-                    import time
-
                     time.sleep(self._retry_backoff * (attempt + 1))
-        return out
+
+        if self._concurrency <= 1:
+            for start, segment in segments:
+                run_segment(start, segment)
+        else:
+            with ThreadPoolExecutor(max_workers=self._concurrency) as ex:
+                futures = [ex.submit(run_segment, start, segment) for start, segment in segments]
+                for _ in as_completed(futures):
+                    pass
+
+        # Fill any missing (shouldn't happen unless persistent failures)
+        return [e if e is not None else [] for e in out]

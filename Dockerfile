@@ -4,21 +4,27 @@ FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
 # Set environment variables for uv
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
+ENV UV_HTTP_TIMEOUT=180
 
 WORKDIR /app
 
+# System build dependencies for native wheels (e.g., pystemmer)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (for better layer caching)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project
+    uv sync --no-install-project
 
 # Copy the project source code
 COPY . /app
 
 # Install the project in non-editable mode
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-editable
+    uv sync --no-editable
 
 # --------- Final Stage ---------
 FROM python:3.11-slim-bookworm

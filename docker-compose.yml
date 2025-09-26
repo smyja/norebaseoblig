@@ -23,6 +23,7 @@ services:
       - ./src/.env:/code/.env
       - ./tests:/code/tests
       - ./pyproject.toml:/code/pyproject.toml
+      - ./storage_autocomply:/code/storage_autocomply
 
   test:
     build:

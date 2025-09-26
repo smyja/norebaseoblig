@@ -1,0 +1,11 @@
+{
+  "children": [
+    {
+      "name": "banking_fintech__CBN",
+      "persist_dir": "storage_autocomply/indices/banking_fintech__CBN",
+      "industry": "banking_fintech",
+      "regulator": "CBN",
+      "doc_count": 905
+    }
+  ]
+}

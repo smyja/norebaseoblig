@@ -91,17 +91,37 @@ def main() -> None:
     INDICES_DIR.mkdir(parents=True, exist_ok=True)
 
     registry_children: List[Dict[str, Any]] = []
+    force_rebuild = os.getenv("FORCE_REBUILD", "false").lower() in {"1", "true", "yes"}
+    only = os.getenv("ONLY_REGULATOR")
     for name, jf in iter_pages():
+        if only and not (name == only or name.startswith(only)):
+            continue
         docs = load_documents(jf)
         if not docs:
             continue
+        persist_dir = INDICES_DIR / name
+        if persist_dir.exists() and not force_rebuild:
+            print(f"[skip] {name} exists at {persist_dir}; set FORCE_REBUILD=true to overwrite")
+            parts = name.split("__", 1)
+            industry = parts[0] if len(parts) == 2 else None
+            regulator = parts[1] if len(parts) == 2 else name
+            registry_children.append(
+                {
+                    "name": name,
+                    "persist_dir": str(persist_dir),
+                    "industry": industry,
+                    "regulator": regulator,
+                    "doc_count": None,
+                }
+            )
+            continue
+
         print(f"[index] building {name} over {len(docs)} chunks")
         try:
             embedder.set_progress_total(len(docs), name=name)
         except Exception:
             pass
         idx = VectorStoreIndex.from_documents(docs)
-        persist_dir = INDICES_DIR / name
         idx.storage_context.persist(persist_dir=str(persist_dir))
         # attempt to split name
         parts = name.split("__", 1)

@@ -2,31 +2,34 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
 from llama_index.core import Settings, StorageContext, load_index_from_storage
+from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.program import LLMTextCompletionProgram
 from llama_index.llms.together import TogetherLLM
-from src.app.core.ai.embeddings import BatchedTogetherEmbedding
+from llama_index.embeddings.together import TogetherEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
+from llama_index.core.schema import TextNode
+from ...schemas.autocomply import (
+    ExtractRequest,
+    ExtractResponse,
+    ExtractionResult,
+)
 
-# Lazy imports of heavy dependencies to avoid import-time crashes
-_llama_ready = False
-_index = None
-_child_indices: dict[str, Any] | None = None
+
+router = APIRouter(prefix="/autocomply", tags=["autocomply"])
 
 
-def _configure_models() -> None:
-    api_key = os.getenv("TOGETHER_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="TOGETHER_API_KEY is not configured")
-    together_model = os.getenv("TOGETHER_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
-    batch_size = int(os.getenv("TOGETHER_EMBED_BATCH", "32"))
-    Settings.embed_model = BatchedTogetherEmbedding(
-        model_name=together_model,
+# Minimal model configuration using Together
+api_key = os.getenv("TOGETHER_API_KEY")
+if api_key:
+    Settings.embed_model = TogetherEmbedding(
+        model_name=os.getenv("TOGETHER_EMBED_MODEL", "togethercomputer/m2-bert-80M-32k-retrieval"),
         api_key=api_key,
-        batch_size=batch_size,
     )
     Settings.llm = TogetherLLM(
         model=os.getenv("TOGETHER_LLM_MODEL", "moonshotai/Kimi-K2-Instruct-0905"),
@@ -34,249 +37,209 @@ def _configure_models() -> None:
     )
 
 
-def _get_index():
-    global _llama_ready, _index
-    if _index is not None:
-        return _index
+class QueryRequest(BaseModel):
+    question: str
+    similarity_top_k: Optional[int] = 10
+    reranker_top_n: Optional[int] = 3
+    use_llm_reranker: Optional[bool] = False
+    max_sources: Optional[int] = 3
+    industry: Optional[str] = None
+    regulator: Optional[str] = None
+    keyword_only: Optional[bool] = None  # keyword/BM25 only retrieval
 
+
+class QueryResponse(BaseModel):
+    answer: str
+    sources: List[str] = []
+
+
+def _resolve_persist_dir(industry: Optional[str], regulator: Optional[str]) -> Path:
+    """Load a single persisted index.
+
+    Preference order:
+      1) AUTOCOMPLY_CHILD_INDEX (explicit child name e.g., banking_fintech__CBN)
+      2) storage_autocomply/indices/<industry>__<regulator>
+      3) storage_autocomply (root index)
+    """
+
+    root_dir = Path(os.getenv("AUTOCOMPLY_STORAGE", "storage_autocomply"))
+    child_name = os.getenv("AUTOCOMPLY_CHILD_INDEX")
+
+    candidate_dirs = []
+    if child_name:
+        candidate_dirs.append(root_dir / "indices" / child_name)
+    if industry and regulator:
+        candidate_dirs.append(root_dir / "indices" / f"{industry}__{regulator}")
+    candidate_dirs.append(root_dir)
+
+    for pd in candidate_dirs:
+        if not pd.exists():
+            continue
+        return pd
+
+    if not root_dir.exists():
+        raise HTTPException(status_code=503, detail="Index storage not found. Build an index first.")
+    raise HTTPException(status_code=503, detail="No suitable index found. Build root or child index.")
+
+
+def _load_index(industry: Optional[str], regulator: Optional[str]):
+    persist_dir = _resolve_persist_dir(industry, regulator)
     try:
-        _configure_models()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"LlamaIndex not available: {exc}")
-
-    persist_dir = Path(os.getenv("AUTOCOMPLY_STORAGE", "storage_autocomply"))
-    if not persist_dir.exists():
-        raise HTTPException(status_code=503, detail="Index storage not found. Run build_llamaindex.py first.")
-
-    try:
-        storage_context = StorageContext.from_defaults(persist_dir=str(persist_dir))
-        _index = load_index_from_storage(storage_context)
-        _llama_ready = True
-        return _index
+        sc = StorageContext.from_defaults(persist_dir=str(persist_dir))
+        return load_index_from_storage(sc)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Failed to load index: {exc}")
 
 
-from ...schemas.autocomply import (
-    ExtractRequest,
-    ExtractResponse,
-    ExtractionResult,
-    Obligation,
-    QueryRequest,
-    QueryResponse,
-)
+_nodes_cache: dict[str, List[TextNode]] = {}
 
 
-router = APIRouter(prefix="/autocomply", tags=["autocomply"])
-
-
-def _metadata_filter(industry: Optional[str], regulator: Optional[str]) -> Dict[str, Any]:
-    flt: Dict[str, Any] = {}
-    if industry:
-        flt["industry"] = industry
-    if regulator:
-        flt["regulator"] = regulator
-    return flt
-
-
-def _hybrid_retrieve(query: str, top_k: int, filters: Dict[str, Any]):
-    index = _get_index()
-
-    retriever = index.as_retriever(similarity_top_k=top_k, filters=filters or None)
-    vector_nodes = retriever.retrieve(query)
-
-    keyword_nodes = []
-    if vector_nodes:
-        bm25 = BM25Retriever.from_defaults(nodes=[candidate.node for candidate in vector_nodes])
-        keyword_nodes = bm25.retrieve(query)
-
-    merged = []
-    seen = set()
-    for candidate in vector_nodes + keyword_nodes:
-        nid = candidate.node.node_id
-        if nid in seen:
-            continue
-        seen.add(nid)
-        merged.append(candidate)
-
-    return merged
-
-
-# ---------- Hierarchical (per-regulator) fan-out retrieval ----------
-def _load_child_indices() -> dict[str, Any]:
-    global _child_indices
-    if _child_indices is not None:
-        return _child_indices
-
-    registry_path = Path(os.getenv("AUTOCOMPLY_REGISTRY", "storage_autocomply/registry.json"))
-    if not registry_path.exists():
-        raise HTTPException(status_code=503, detail="Registry not found. Run build_llamaindex_graph.py.")
-
+def _load_nodes_from_docstore(industry: Optional[str], regulator: Optional[str]) -> List[TextNode]:
+    """Load all TextNodes directly from docstore.json in the selected persist dir."""
+    persist_dir = _resolve_persist_dir(industry, regulator)
+    key = str(persist_dir)
+    cached = _nodes_cache.get(key)
+    if cached:
+        return cached
+    docstore_path = persist_dir / "docstore.json"
+    if not docstore_path.exists():
+        raise HTTPException(status_code=503, detail=f"docstore.json not found under {persist_dir}")
     try:
         import json
-        from llama_index.core import StorageContext, load_index_from_storage
 
-        with registry_path.open("r", encoding="utf-8") as f:
-            registry = json.load(f)
-
-        child_indices: dict[str, Any] = {}
-        for item in registry.get("children", []):
-            name = item["name"]
-            persist_dir = item["persist_dir"]
-            sc = StorageContext.from_defaults(persist_dir=persist_dir)
-            child_indices[name] = load_index_from_storage(sc)
-        _child_indices = child_indices
-        return child_indices
+        with docstore_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        records = data.get("docstore/data", {})
+        nodes: List[TextNode] = []
+        for nid, wrapper in records.items():
+            payload = wrapper.get("__data__", {})
+            text = payload.get("text") or ""
+            if not text.strip():
+                continue
+            md = payload.get("metadata") or {}
+            nodes.append(TextNode(text=text, metadata=md, id_=nid))
+        if not nodes:
+            raise HTTPException(status_code=503, detail="No nodes found in docstore.json")
+        _nodes_cache[key] = nodes
+        return nodes
+    except HTTPException:
+        # Bubble up known HTTP errors as-is
+        raise
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Failed to load child indices: {exc}")
-
-
-def _select_children(children: dict[str, Any], limit: int = 6) -> List[str]:
-    names = sorted(children.keys())
-    return names[:limit]
-
-
-def _fanout_retrieve(
-    query: str,
-    similarity_top_k: int,
-    industry: Optional[str],
-    regulator: Optional[str],
-    per_child: int = 4,
-    max_children: int = 6,
-):
-    children = _load_child_indices()
-
-    if regulator:
-        explicit = [
-            k
-            for k in children
-            if k.endswith(f"__{regulator}") and (industry is None or k.startswith(f"{industry}__"))
-        ]
-        selected_names = explicit or _select_children(children, limit=max_children)
-    else:
-        selected_names = _select_children(children, limit=max_children)
-
-    merged = []
-    for name in selected_names:
-        idx = children[name]
-        retriever = idx.as_retriever(similarity_top_k=per_child)
-        try:
-            nodes = retriever.retrieve(query)
-        except Exception:
-            nodes = []
-        merged.extend(nodes)
-
-    merged.sort(key=lambda n: (getattr(n, "score", None) or 0.0), reverse=True)
-
-    seen = set()
-    result = []
-    for cand in merged:
-        nid = cand.node.node_id
-        if nid in seen:
-            continue
-        seen.add(nid)
-        result.append(cand)
-        if len(result) >= similarity_top_k:
-            break
-
-    return result
-
+        # Wrap unexpected errors with a 500 to keep the API consistent
+        raise HTTPException(status_code=500, detail=f"Failed to read docstore: {exc}")
+ 
 
 @router.post("/chat", response_model=QueryResponse)
 def chat(request: QueryRequest) -> QueryResponse:
-    use_graph = os.getenv("AUTOCOMPLY_USE_GRAPH", "false").lower() in {"1", "true", "yes"}
+    if not os.getenv("TOGETHER_API_KEY"):
+        raise HTTPException(status_code=500, detail="TOGETHER_API_KEY is not configured")
 
-    if use_graph:
-        nodes = _fanout_retrieve(
-            query=request.question,
-            similarity_top_k=request.similarity_top_k,
-            industry=request.industry,
-            regulator=request.regulator,
-        )
-        if not nodes:
-            raise HTTPException(status_code=404, detail="No results")
+    # Decide retrieval mode (keyword-only default if env set)
+    keyword_only = request.keyword_only
+    if keyword_only is None:
+        keyword_only = os.getenv("AUTOCOMPLY_KEYWORD_ONLY", "true").lower() in {"1", "true", "yes"}
 
-        context_lines: List[str] = []
-        sources: List[Dict[str, Any]] = []
-        for cand in nodes:
-            meta = cand.node.metadata or {}
-            header = f"[{meta.get('regulator','?')} | {meta.get('filename','?')} | p.{meta.get('page_no','?')}]"
-            context_lines.append(header + "\n" + cand.node.get_content())
-            sources.append(
-                {
-                    "file": meta.get("file_path") or meta.get("filename"),
-                    "page": meta.get("page_no"),
-                    "industry": meta.get("industry"),
-                    "regulator": meta.get("regulator"),
-                    "url": meta.get("source_url"),
-                }
-            )
+    if keyword_only:
+        # BM25 over all nodes in the selected child/root index
+        nodes = _load_nodes_from_docstore(request.industry, request.regulator)
+        bm25 = BM25Retriever.from_defaults(nodes=nodes)
+        results = bm25.retrieve(request.question)
+        # Optional LLM rerank
+        if request.use_llm_reranker:
+            reranker = LLMRerank(choice_batch_size=5, top_n=request.reranker_top_n or 3, llm=Settings.llm)
+            try:
+                results = reranker.postprocess_nodes(results, query_str=request.question)  # type: ignore[arg-type]
+            except Exception:
+                pass
+        # Build context: pure BM25 top-K, no heuristic filtering
+        k = request.similarity_top_k or 10
+        top = results[:k]
+        context = []
+        sources: List[str] = []
+        seen: set[str] = set()
+        for r in top:
+            n = r.node if hasattr(r, "node") else r
+            meta = getattr(n, "metadata", None) or {}
+            file_path = meta.get("file_path") or meta.get("filename")
+            page_no = meta.get("page_no")
+            header = f"[{meta.get('regulator','?')} | {meta.get('filename','?')} | p.{page_no or '?'}]"
+            context.append(header + "\n" + (n.get_content() if hasattr(n, "get_content") else n.text))
+            if file_path:
+                label = f"{file_path}#p{page_no}" if page_no else str(file_path)
+                if label not in seen:
+                    sources.append(label)
+                    seen.add(label)
+            if len(sources) >= (request.max_sources or 3):
+                pass
 
+        # Ask LLM with simple prompt
         prompt = (
             "You are a compliance analyst. Use the context snippets to answer the user's question conservatively. "
             "Prefer citing clearly scoped obligations. If uncertain, say so. "
             "Include brief inline citations like [regulator | file | p.X] when referencing specifics.\n\n"
-            f"Question: {request.question}\n\nContext:\n" + "\n\n".join(context_lines)
+            f"Question: {request.question}\n\nContext:\n" + "\n\n".join(context)
         )
         completion = Settings.llm.complete(prompt)
         answer_text = getattr(completion, "text", str(completion))
-        return QueryResponse(answer=answer_text, sources=sources[:5])
+        return QueryResponse(answer=answer_text, sources=sources[: (request.max_sources or 3)])
     else:
-        index = _get_index()
-
-        filters = _metadata_filter(request.industry, request.regulator)
-        nodes = _hybrid_retrieve(request.question, request.similarity_top_k, filters)
-        if not nodes:
-            raise HTTPException(status_code=404, detail="No results")
-
-        qe = index.as_query_engine(
-            similarity_top_k=request.similarity_top_k,
-            filters=filters or None,
+        # Vector path (kept for completeness)
+        index = _load_index(request.industry, request.regulator)
+        node_postprocessors = []
+        if request.use_llm_reranker:
+            node_postprocessors.append(
+                LLMRerank(choice_batch_size=5, top_n=request.reranker_top_n or 3, llm=Settings.llm)
+            )
+        query_engine = index.as_query_engine(
+            similarity_top_k=request.similarity_top_k or 10,
             llm=Settings.llm,
+            node_postprocessors=node_postprocessors,
         )
-        answer = qe.query(request.question)
-
-        sources: List[Dict[str, Any]] = []
-    for n in getattr(answer, "source_nodes", []):
-        meta = n.metadata or {}
-        sources.append(
-            {
-                "file": meta.get("file_path") or meta.get("filename"),
-                "page": meta.get("page_no"),
-                "industry": meta.get("industry"),
-                "regulator": meta.get("regulator"),
-            }
-        )
-
-        return QueryResponse(answer=str(answer), sources=sources[:5])
+        response = query_engine.query(request.question)
+        if not response or str(response).strip() == "" or str(response) == "Empty Response":
+            raise HTTPException(status_code=404, detail="No results found")
+        sources: List[str] = []
+        seen: set[str] = set()
+        for node in getattr(response, "source_nodes", []) or []:
+            meta = getattr(node, "metadata", None) or {}
+            file_path = meta.get("file_path") or meta.get("filename")
+            page_no = meta.get("page_no")
+            if not file_path:
+                continue
+            label = f"{file_path}#p{page_no}" if page_no else str(file_path)
+            if label in seen:
+                continue
+            sources.append(label)
+            seen.add(label)
+            if len(sources) >= (request.max_sources or 3):
+                break
+    return QueryResponse(answer=str(response), sources=sources)
 
 
 @router.post("/extract_obligations", response_model=ExtractResponse)
 def extract_obligations(request: ExtractRequest) -> ExtractResponse:
-    use_graph = os.getenv("AUTOCOMPLY_USE_GRAPH", "false").lower() in {"1", "true", "yes"}
+    """Keyword-only retrieval + LLM schema extraction. No heuristics."""
+    if not os.getenv("TOGETHER_API_KEY"):
+        raise HTTPException(status_code=500, detail="TOGETHER_API_KEY is not configured")
 
-    if use_graph:
-        nodes = _fanout_retrieve(
-            query=request.query,
-            similarity_top_k=request.similarity_top_k,
-            industry=request.industry,
-            regulator=request.regulator,
-            per_child=4,
-        )
-    else:
-        filters = _metadata_filter(request.industry, request.regulator)
-        nodes = _hybrid_retrieve(request.query, request.similarity_top_k, filters)
+    nodes = _load_nodes_from_docstore(request.industry, request.regulator)
+    bm25 = BM25Retriever.from_defaults(nodes=nodes)
+    results = bm25.retrieve(request.query)
 
-    if not nodes:
-        return ExtractResponse()
+    max_return = request.max_return if request.max_return is not None else 30
+    picked = results[: max_return]
 
     context_lines: List[str] = []
-    used_sources: List[Dict[str, Any]] = []
-
-    for candidate in nodes[: request.max_return]:
-        meta = candidate.node.metadata or {}
+    used_sources: List[dict] = []
+    for r in picked:
+        n = r.node if hasattr(r, "node") else r
+        meta = getattr(n, "metadata", None) or {}
+        text = n.get_content() if hasattr(n, "get_content") else getattr(n, "text", "")
+        if not text:
+            continue
         header = f"[{meta.get('regulator', '?')} | {meta.get('filename', '?')} | p.{meta.get('page_no', '?')}]"
-        context_lines.append(header + "\n" + candidate.node.get_content())
+        context_lines.append(header + "\n" + text)
         used_sources.append(
             {
                 "file": meta.get("file_path") or meta.get("filename"),
@@ -285,6 +248,9 @@ def extract_obligations(request: ExtractRequest) -> ExtractResponse:
                 "regulator": meta.get("regulator"),
             }
         )
+
+    if not context_lines:
+        return ExtractResponse()
 
     prompt = (
         "From the context, extract explicit compliance obligations and return an array under 'obligations'. "
@@ -302,6 +268,10 @@ def extract_obligations(request: ExtractRequest) -> ExtractResponse:
         temperature=0.1,
         input_key="context",
     )
-    result = program(context="\n\n".join(context_lines))
+    try:
+        result = program(context="\n\n".join(context_lines))
+        obligations = result.obligations
+    except Exception:
+        obligations = []
 
-    return ExtractResponse(obligations=result.obligations, used_sources=used_sources[:20])
+    return ExtractResponse(obligations=obligations, used_sources=used_sources[:20])
