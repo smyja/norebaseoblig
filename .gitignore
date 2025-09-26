@@ -134,5 +134,5 @@ cython_debug/
 
 .idea
 regulations_corpus
-parsed_pages
+
 .env.local
