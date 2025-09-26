@@ -27,14 +27,18 @@ class ExtractionResult(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
-    similarity_top_k: int = 10
+    similarity_top_k: Optional[int] = 10
+    reranker_top_n: Optional[int] = 3
+    use_llm_reranker: Optional[bool] = False
+    max_sources: Optional[int] = 3
     industry: Optional[str] = None
     regulator: Optional[str] = None
+    keyword_only: Optional[bool] = None  # keyword/BM25 only retrieval
 
 
 class QueryResponse(BaseModel):
     answer: str
-    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[str] = Field(default_factory=list)
 
 
 class ExtractRequest(BaseModel):

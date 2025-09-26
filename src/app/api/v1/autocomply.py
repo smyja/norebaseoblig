@@ -6,7 +6,6 @@ import logging
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 import json
 
 from llama_index.core import Settings, StorageContext, load_index_from_storage
@@ -22,6 +21,8 @@ from ...schemas.autocomply import (
     ExtractResponse,
     ExtractionResult,
     Obligation,
+    QueryRequest,
+    QueryResponse,
 )
 
 
@@ -42,20 +43,7 @@ if api_key:
     )
 
 
-class QueryRequest(BaseModel):
-    question: str
-    similarity_top_k: Optional[int] = 10
-    reranker_top_n: Optional[int] = 3
-    use_llm_reranker: Optional[bool] = False
-    max_sources: Optional[int] = 3
-    industry: Optional[str] = None
-    regulator: Optional[str] = None
-    keyword_only: Optional[bool] = None  # keyword/BM25 only retrieval
-
-
-class QueryResponse(BaseModel):
-    answer: str
-    sources: List[str] = []
+ 
 
 
 def _resolve_persist_dir(industry: Optional[str], regulator: Optional[str]) -> Path:
