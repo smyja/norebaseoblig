@@ -19,6 +19,7 @@ load_dotenv("src/.env", override=False)
 
 from llama_index.core import Settings, StorageContext, load_index_from_storage
 from llama_index.core.program import LLMTextCompletionProgram
+from llama_index.core.prompts import PromptTemplate
 from llama_index.llms.together import TogetherLLM
 from src.app.core.ai.embeddings import BatchedTogetherEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
@@ -193,22 +194,37 @@ def extract_obligations(request: ExtractRequest) -> ExtractResponse:
             }
         )
 
-    prompt = (
-        "From the context, extract explicit compliance obligations and return an array under 'obligations'. "
+    instructions = (
+        "You are an extraction assistant. From the context below, extract explicit compliance obligations and return them under the key 'obligations'. "
         "Each obligation must include: regulator, instrument_name (infer from filename if needed), "
         "instrument_type (Act, Regulation, Guideline, Circular, Code), citation (section/reg number), "
         "actor (who must comply), obligation_text, trigger (if conditional), deadline (if any), penalty (if any), "
         "effective_date (if stated), and source_file/source_page from metadata. "
-        "Focus on Nigeria regulators. If unsure, leave a field null. Do not invent."
+        "Explicitly search for penalties/sanctions (e.g., fine, penalty, sanctions, liable, contravention, violation, revocation, suspension) and populate the penalty field with the precise text or a concise summary tied to the obligation. "
+        "If no explicit penalty is specified, leave penalty null. Do not invent."
+    )
+
+    example = (
+        "Example (illustrative only):\n"
+        '{"obligations":[{"regulator":"CBN","instrument_name":"XYZ Guidelines","instrument_type":"Guideline",'
+        '"citation":"s.5(2)","actor":"Banks","obligation_text":"Banks shall maintain records of all domestic and cross-border transfers.",'
+        '"trigger":null,"deadline":"within 30 days","penalty":null,"effective_date":null,"source_file":"xyz.pdf","source_page":12}]}'
+    )
+
+    prompt_template = PromptTemplate(
+        "{instructions}\n\n"
+        "Follow the format instructions precisely. {output_instructions}\n\n"
+        f"{example}\n\n"
+        "Context:\n{context}"
     )
 
     program = LLMTextCompletionProgram.from_defaults(
         output_cls=ExtractionResult,
-        prompt=prompt,
+        prompt=prompt_template,
         llm=Settings.llm,
         temperature=0.1,
         input_key="context",
     )
-    result = program(context="\n\n".join(context_lines))
+    result = program(context="\n\n".join(context_lines), instructions=instructions)
 
     return ExtractResponse(obligations=result.obligations, used_sources=used_sources[:20])
