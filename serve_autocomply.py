@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
 
 # Load env from repo root, then fall back to src/.env.local and src/.env
 load_dotenv()
@@ -23,6 +22,14 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.llms.together import TogetherLLM
 from src.app.core.ai.embeddings import BatchedTogetherEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
+from src.app.schemas.autocomply import (
+    Obligation,
+    ExtractionResult,
+    QueryRequest,
+    QueryResponse,
+    ExtractRequest,
+    ExtractResponse,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("autocomply")
@@ -46,52 +53,6 @@ def configure_models() -> None:
         model=os.getenv("TOGETHER_LLM_MODEL", "moonshotai/Kimi-K2-Instruct-0905"),
         api_key=api_key,
     )
-
-
-class Obligation(BaseModel):
-    industry: Optional[str] = None
-    regulator: Optional[str] = None
-    instrument_name: Optional[str] = None
-    instrument_type: Optional[str] = None
-    citation: Optional[str] = None
-    actor: Optional[str] = None
-    obligation_text: str
-    trigger: Optional[str] = None
-    deadline: Optional[str] = None
-    penalty: Optional[str] = None
-    effective_date: Optional[str] = None
-    source_file: Optional[str] = None
-    source_page: Optional[int] = None
-    source_url: Optional[str] = None
-
-
-class ExtractionResult(BaseModel):
-    obligations: List[Obligation] = Field(default_factory=list)
-
-
-class QueryRequest(BaseModel):
-    question: str
-    similarity_top_k: int = 10
-    industry: Optional[str] = None
-    regulator: Optional[str] = None
-
-
-class QueryResponse(BaseModel):
-    answer: str
-    sources: List[Dict[str, Any]] = Field(default_factory=list)
-
-
-class ExtractRequest(BaseModel):
-    query: str
-    similarity_top_k: int = 12
-    max_return: int = 30
-    industry: Optional[str] = None
-    regulator: Optional[str] = None
-
-
-class ExtractResponse(BaseModel):
-    obligations: List[Obligation] = Field(default_factory=list)
-    used_sources: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 configure_models()
@@ -155,19 +116,24 @@ def chat(request: QueryRequest) -> QueryResponse:
     )
     answer = query_engine.query(request.question)
 
-    sources: List[Dict[str, Any]] = []
+    # Conform to shared schema: list[str] labels for sources
+    src_labels: List[str] = []
+    seen: set[str] = set()
     for node_with_score in getattr(answer, "source_nodes", []):
         metadata = node_with_score.metadata or {}
-        sources.append(
-            {
-                "file": metadata.get("file_path") or metadata.get("filename"),
-                "page": metadata.get("page_no"),
-                "industry": metadata.get("industry"),
-                "regulator": metadata.get("regulator"),
-            }
-        )
+        file_path = metadata.get("file_path") or metadata.get("filename")
+        page_no = metadata.get("page_no")
+        if not file_path:
+            continue
+        label = f"{file_path}#p{page_no}" if page_no else str(file_path)
+        if label in seen:
+            continue
+        src_labels.append(label)
+        seen.add(label)
+        if len(src_labels) >= (request.max_sources or 3):
+            break
 
-    return QueryResponse(answer=str(answer), sources=sources[:5])
+    return QueryResponse(answer=str(answer), sources=src_labels)
 
 
 @app.post("/extract_obligations", response_model=ExtractResponse)
