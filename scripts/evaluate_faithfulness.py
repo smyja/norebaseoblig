@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BUSL-1.1
 """Quick, provider-agnostic RAG evaluation using Ragas faithfulness.
 
 This script runs a few queries against the local Autocomply retrieval/LLM stack,
@@ -136,4 +137,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
