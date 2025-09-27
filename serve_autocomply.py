@@ -22,6 +22,7 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.llms.together import TogetherLLM
 from src.app.core.ai.embeddings import BatchedTogetherEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
+from src.app.observability.phoenix_setup import enable_phoenix, instrument_fastapi
 from src.app.schemas.autocomply import (
     Obligation,
     ExtractionResult,
@@ -57,6 +58,12 @@ def configure_models() -> None:
 
 configure_models()
 
+# Optionally enable Phoenix tracing/instrumentation
+enable_phoenix(
+    host=os.getenv("PHOENIX_HOST"),
+    port=int(os.getenv("PHOENIX_PORT", "0") or 0) or None,
+)
+
 if not PERSIST_DIR.exists():
     raise SystemExit("storage_autocomply not found. Run build_llamaindex.py first.")
 
@@ -64,6 +71,9 @@ storage_context = StorageContext.from_defaults(persist_dir=str(PERSIST_DIR))
 index = load_index_from_storage(storage_context)
 
 app = FastAPI()
+
+# Instrument FastAPI + HTTP clients for request traces (best‑effort)
+instrument_fastapi(app)
 
 
 def metadata_filter(industry: Optional[str], regulator: Optional[str]) -> Dict[str, Any]:

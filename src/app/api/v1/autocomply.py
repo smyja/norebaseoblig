@@ -15,6 +15,7 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.llms.together import TogetherLLM
 from llama_index.embeddings.together import TogetherEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
+from ...observability.phoenix_setup import enable_phoenix
 from llama_index.core.schema import TextNode
 from ...schemas.autocomply import (
     ExtractRequest,
@@ -41,6 +42,12 @@ if api_key:
         model=os.getenv("TOGETHER_LLM_MODEL", "moonshotai/Kimi-K2-Instruct-0905"),
         api_key=api_key,
     )
+
+# Optionally enable Phoenix tracing/instrumentation (no‑op if disabled/missing)
+enable_phoenix(
+    host=os.getenv("PHOENIX_HOST"),
+    port=int(os.getenv("PHOENIX_PORT", "0") or 0) or None,
+)
 
 
  
@@ -331,7 +338,6 @@ def extract_obligations(request: ExtractRequest) -> ExtractResponse:
 
     context_lines: List[str] = []
     used_sources: List[dict] = []
-    context_by_file_page: dict[tuple[str, int], str] = {}
     for r in picked:
         n = r.node if hasattr(r, "node") else r
         meta = getattr(n, "metadata", None) or {}
@@ -348,16 +354,6 @@ def extract_obligations(request: ExtractRequest) -> ExtractResponse:
                 "regulator": meta.get("regulator"),
             }
         )
-        # accumulate raw text per (file basename, page) to refine quotes later
-        try:
-            fname = os.path.basename((meta.get("file_path") or meta.get("filename") or "").strip())
-            page_no = int(meta.get("page_no") or 0)
-            if fname and page_no:
-                key = (fname, page_no)
-                prev = context_by_file_page.get(key, "")
-                context_by_file_page[key] = (prev + "\n\n" + text) if prev else text
-        except Exception:
-            pass
 
     if not context_lines:
         return ExtractResponse()
@@ -457,60 +453,5 @@ def extract_obligations(request: ExtractRequest) -> ExtractResponse:
         except Exception as exc:  # noqa: BLE001
             logger.info("fallback JSON parsing failed: %s", exc)
             # Keep obligations as []
-
-    # LLM-based refinement: generic across sectors/regulators
-    use_refine = request.refine_with_llm
-    if use_refine is None:
-        use_refine = os.getenv("AUTOCOMPLY_REFINE", "true").lower() in {"1", "true", "yes"}
-
-    if use_refine and obligations:
-        refine_instructions = (
-            "Refine the draft obligation to match the context precisely. "
-            "Quote the exact sentence(s) for obligation_text where possible. "
-            "Populate penalty with the exact sanction or consequence text from the same page (e.g., 'will not be executed', 'liable to a fine …'). "
-            "If no penalty is present in the context, set penalty to null. "
-            "Do not invent or generalize beyond the provided page. Return only valid JSON matching the Obligation schema."
-        )
-
-        refine_template = PromptTemplate(
-            "{instructions}\n\n"
-            "Draft Obligation (JSON):\n{draft}\n\n"
-            "Context (single page):\n{context}"
-        )
-        refiner = LLMTextCompletionProgram.from_defaults(
-            output_cls=Obligation,
-            prompt=refine_template,
-            llm=Settings.llm,
-            temperature=0.0,
-            input_key="context",
-        )
-
-        new_list: List[Obligation] = []
-        for ob in obligations:
-            try:
-                fname = os.path.basename((getattr(ob, "source_file", None) or "").strip())
-                page_no = int(getattr(ob, "source_page", 0) or 0)
-            except Exception:
-                fname = ""
-                page_no = 0
-            ctx_text = context_by_file_page.get((fname, page_no), "") if fname and page_no else ""
-            if not ctx_text:
-                new_list.append(ob)
-                continue
-            try:
-                draft_json = ob.json(exclude_none=True)  # pydantic v1
-            except Exception:
-                draft_json = json.dumps(getattr(ob, "__dict__", {}))
-            try:
-                refined = refiner(context=ctx_text, draft=draft_json, instructions=refine_instructions)
-                # Ensure we have an Obligation instance
-                if isinstance(refined, Obligation):
-                    new_list.append(refined)
-                else:
-                    new_list.append(Obligation(**refined.dict()))
-            except Exception as exc:  # noqa: BLE001
-                logger.info("obligation refine skipped: %s", exc)
-                new_list.append(ob)
-        obligations = new_list
 
     return ExtractResponse(obligations=obligations, used_sources=used_sources[:20])

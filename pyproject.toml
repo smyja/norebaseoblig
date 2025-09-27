@@ -37,15 +37,16 @@ dependencies = [
     "requests>=2.31.0",
     "pymupdf>=1.23.0",
     "pytesseract>=0.3.10",
-    "llama-index>=0.11.0,<0.12.0",
-    "llama-index-retrievers-bm25>=0.1.0",
-    "llama-index-embeddings-together>=0.1.0",
-    "llama-index-llms-together>=0.1.0",
+    "llama-index>=0.12.0,<0.13.0",
+    "llama-index-retrievers-bm25>=0.2.0",
+    "llama-index-embeddings-together>=0.2.0",
+    "llama-index-llms-together>=0.2.0",
     "together>=1.2.0",
     "beautifulsoup4>=4.12.0",
     "uv (>=0.8.22,<0.9.0)",
     "playwright (>=1.55.0,<2.0.0)",
     "bs4 (>=0.0.2,<0.0.3)",
+    "arize-phoenix>=11.37.0",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +57,19 @@ dev = [
     "mypy>=1.8.0",
     "types-redis>=4.6.0",
     "ruff>=0.1.0",
+]
+eval = [
+    "arize-phoenix>=5.9.0",
+    "arize-phoenix-client>=0.9.0",
+    "ragas>=0.1.8",
+    "langchain-together>=0.2.0",
+    "llama-index-embeddings-langchain>=0.2.0",
+    "openinference-instrumentation-llama-index>=0.1.7",
+    "datasets>=2.14.0",
+    "openai>=1.0.0",
+    "opentelemetry-instrumentation-fastapi>=0.45b0",
+    "opentelemetry-instrumentation-requests>=0.45b0",
+    "opentelemetry-instrumentation-httpx>=0.45b0",
 ]
 
 [build-system]

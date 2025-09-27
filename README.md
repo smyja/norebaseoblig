@@ -7,18 +7,23 @@ Autocomply turns unstructured regulatory PDFs into searchable chunks and structu
 - A lightweight OCR pipeline to reliably parse PDFs
 - A property graph (optional) to explore entities and relations
 
-This doc is a tour of the architecture, setup, and API, with code snippets and tips.
+This doc is a tour of the architecture, setup, API, and evaluations, with code snippets and tips.
+
+See also:
+- Autocomply deep‑dive: `docs/AUTOCOMPLY.md`
+- Evaluations & Phoenix on Together: `docs/EVAL_PHOENIX_TOGETHER.md`
 
 ## What's Inside
 
 - Parsing and OCR: Robust page‑level text extraction from PDFs with PyMuPDF and Tesseract.
 - Indexing: Per‑regulator vector indices persisted under `storage_autocomply/indices/<industry>__<regulator>` plus a simple registry.
 - Retrieval: Fast keyword retrieval (BM25) by default, optional vector/hybrid retrieval and LLM reranking.
-- Extraction: A structured “obligation” schema with Pydantic models and an LLM program. Includes a strict JSON fallback and a context‑aware refinement step.
+- Extraction: A structured “obligation” schema with Pydantic models and an LLM program. Includes a strict JSON fallback. The previous per‑obligation “refinement” step has been removed to cut LLM calls.
 - API: Two endpoints — `/autocomply/chat` (Q&A with sources) and `/autocomply/extract_obligations` (schema extraction with sources).
 - Knowledge Graph: Optional property graph built from parsed pages for downstream exploration.
 - Centralized Schemas: Shared Pydantic models in `src/app/schemas/autocomply.py` used by the API.
 - Efficient Embeddings: A batched Together embeddings client to cut HTTP overhead.
+- Observability & Evals: Phoenix tracing + model comparisons, plus Ragas faithfulness.
 
 ## Quickstart
 
@@ -32,6 +37,7 @@ Setup
 
 - Create a virtual environment
 - Install dependencies: `pip install -e .` (or `poetry install` if you use Poetry)
+- Note: this project targets LlamaIndex >= 0.12.
 - Copy `src/.env.example` to `src/.env.local` and set at least:
   - `TOGETHER_API_KEY=<your-key>`
   - `TOGETHER_EMBED_MODEL=togethercomputer/m2-bert-80M-32k-retrieval` (or any supported model)
@@ -98,8 +104,7 @@ curl -X POST http://localhost:8000/autocomply/extract_obligations \
     "max_return": 30,
     "hybrid": true,
     "use_llm_reranker": true,
-    "reranker_top_n": 8,
-    "refine_with_llm": true
+    "reranker_top_n": 8
   }'
 ```
 
@@ -242,7 +247,7 @@ if request.use_llm_reranker:
     results = reranker.postprocess_nodes(results, query_str=request.question)
 ```
 
-## Obligation Extraction: Scoring, Program, Fallback, Refinement
+## Obligation Extraction: Scoring, Program, Fallback
 
 Scoring (prioritize normative language and penalty cues; de‑prioritize irrelevant pages):
 
@@ -280,18 +285,7 @@ if first != -1 and last != -1:
 obligations = ExtractionResult(**json.loads(txt)).obligations
 ```
 
-Context‑aware refinement of each obligation:
-
-```python
-# src/app/api/v1/autocomply.py:466
-refiner = LLMTextCompletionProgram.from_defaults(
-    output_cls=Obligation,
-    prompt=PromptTemplate("{instructions}\n\nDraft Obligation (JSON):\n{draft}\n\nContext (single page):\n{context}"),
-    llm=Settings.llm,
-    temperature=0.0,
-)
-refined = refiner(context=ctx_text, draft=ob.json(exclude_none=True), instructions=refine_instructions)
-```
+Per‑obligation refinement has been removed by default to reduce LLM calls. You can still tune instructions in the main extraction program.
 
 ## Batched Embeddings
 
@@ -316,6 +310,25 @@ python build_knowledge_graph.py
 
 Under the hood, we use `PropertyGraphIndex` + `SchemaLLMPathExtractor` with a constrained schema for entity and relation types.
 
+## Observability & Evaluations
+
+- Phoenix tracing and model comparisons are included. See `docs/EVAL_PHOENIX_TOGETHER.md`.
+- Install eval tooling: `pip install -e '.[eval]'` (zsh needs quotes) or `uv sync --extra eval`.
+- Optional env:
+  - `PHOENIX_ENABLED=true` `PHOENIX_PORT=6006` (and if 4317 is busy: `PHOENIX_GRPC_PORT=14317`)
+  - `PHOENIX_PROJECT=autocomply-evals` to scope runs in the Phoenix UI
+
+Quick scripts:
+- Compare models + log annotations:
+  - `python scripts/evaluate_rag_phoenix.py --industry banking_fintech --regulator CBN --queries examples/queries.txt --top-k 10 --eval-model meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo --answer-models meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo,Qwen/Qwen2.5-72B-Instruct-Turbo`
+- Ragas faithfulness over BM25 contexts:
+  - `python scripts/evaluate_faithfulness.py --industry banking_fintech --regulator CBN --top-k 10 --queries examples/queries.txt`
+
+Endpoint traces:
+- `serve_autocomply.py` instruments FastAPI + httpx/requests (best‑effort) when eval extras are installed.
+- Start: `uvicorn serve_autocomply:app --reload` and call `/autocomply/chat` or `/autocomply/extract_obligations`.
+- Open Phoenix at `http://localhost:6006` and filter for server/retriever/LLM spans.
+
 ## Configuration
 
 Common environment variables (set in `src/.env.local` or the environment):
@@ -329,12 +342,12 @@ Common environment variables (set in `src/.env.local` or the environment):
 - `AUTOCOMPLY_CHILD_INDEX` — force a specific child index (`<industry>__<regulator>`)
 - `AUTOCOMPLY_KEYWORD_ONLY` — default chat retrieval mode (true = BM25)
 - `AUTOCOMPLY_HYBRID` — include vector retrieval in extraction
-- `AUTOCOMPLY_REFINE` — run the context‑aware refinement step
+- `AUTOCOMPLY_REFINE` — deprecated; refinement removed to reduce LLM calls
 - `AUTOCOMPLY_SKIP_TOC` — skip obvious Table of Contents pages when parsing
 
 ## Notes and Next Steps
 
 - Centralized schemas: API imports `QueryRequest/QueryResponse/Extract*` from `src/app/schemas/autocomply.py` (no duplication).
+- LlamaIndex upgraded to 0.12+, OpenInference adapter enabled for Phoenix tracing.
 - The extraction pipeline is conservative: if uncertain, returns no obligations. Tuning cues and thresholds can shift recall vs. precision.
 - Possible extensions: cross‑page coalescing of obligations, richer source metadata, de‑duplication across regulators, and KG‑backed query workflows.
-

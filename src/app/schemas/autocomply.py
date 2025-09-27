@@ -47,10 +47,9 @@ class ExtractRequest(BaseModel):
     max_return: int = 30
     industry: Optional[str] = None
     regulator: Optional[str] = None
-    # Optional quality controls
     use_llm_reranker: Optional[bool] = None
     reranker_top_n: Optional[int] = None
-    hybrid: Optional[bool] = None  # combine vector + BM25 if available
+    hybrid: Optional[bool] = None 
     refine_with_llm: Optional[bool] = None
 
 
