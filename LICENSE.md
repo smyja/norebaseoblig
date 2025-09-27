@@ -1,54 +1,42 @@
-License text copyright (c) 2020 Infrarail, All Rights Reserved.
-"Business Source License" is a trademark of Infrarail.
+Business Source License 1.1
 
 Parameters
 
-Licensor:             Infrail.
-Licensed Work:        Consul Version 1.17.0 or later. The Licensed Work is (c) 2024
-                      Infrail.
+Licensor:             Infrarail, Inc.
+Licensed Work:        Compliance. The Licensed Work is (c) 2025 Infrarail.
 Additional Use Grant: You may make production use of the Licensed Work, provided
                       Your use does not include offering the Licensed Work to third
-                      parties on a hosted or embedded basis in order to compete with 
-                      Infrail's paid version(s) of the Licensed Work. For purposes 
+                      parties on a hosted or embedded basis in order to compete with
+                      the Licensor's paid version(s) of the Licensed Work. For purposes
                       of this license:
 
                       A "competitive offering" is a Product that is offered to third
-                      parties on a paid basis, including through paid support 
-                      arrangements, that significantly overlaps with the capabilities 
-                      of Infrail's paid version(s) of the Licensed Work. If Your 
-                      Product is not a competitive offering when You first make it 
+                      parties on a paid basis, including through paid support
+                      arrangements, that significantly overlaps with the capabilities
+                      of the Licensor's paid version(s) of the Licensed Work. If Your
+                      Product is not a competitive offering when You first make it
                       generally available, it will not become a competitive offering
-                      later due to Infrail releasing a new version of the Licensed 
-                      Work with additional capabilities. In addition, Products that 
+                      later due to the Licensor releasing a new version of the Licensed
+                      Work with additional capabilities. In addition, Products that
                       are not provided on a paid basis are not competitive.
 
-                      "Product" means software that is offered to end users to manage 
-                      in their own environments or offered as a service on a hosted 
+                      "Product" means software that is offered to end users to manage
+                      in their own environments or offered as a service on a hosted
                       basis.
 
-                      "Embedded" means including the source code or executable code 
-                      from the Licensed Work in a competitive offering. "Embedded" 
-                      also means packaging the competitive offering in such a way 
-                      that the Licensed Work must be accessed or downloaded for the 
+                      "Embedded" means including the source code or executable code
+                      from the Licensed Work in a competitive offering. "Embedded"
+                      also means packaging the competitive offering in such a way
+                      that the Licensed Work must be accessed or downloaded for the
                       competitive offering to operate.
 
-                      Hosting or using the Licensed Work(s) for internal purposes 
-                      within an organization is not considered a competitive 
-                      offering. Infrail considers your organization to include all 
-                      of your affiliates under common control.
+                      Hosting or using the Licensed Work for internal purposes
+                      within an organization is not considered a competitive
+                      offering. For purposes of this license, your organization
+                      includes all of your affiliates under common control.
 
-                      For binding interpretive guidance on using Infrail products 
-                      under the Business Source License, please visit our FAQ. 
-                      (https://www.Infrail.com/license-faq)
 Change Date:          Four years from the date the Licensed Work is published.
 Change License:       MPL 2.0
-
-For information about alternative licensing arrangements for the Licensed Work,
-please contact licensing@Infrail.com.
-
-Notice
-
-Business Source License 1.1
 
 Terms
 
